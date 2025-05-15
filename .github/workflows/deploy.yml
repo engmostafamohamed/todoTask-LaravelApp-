@@ -1,48 +1,58 @@
-name: 🚀 Deploy Laravel Project
+# .github/workflows/deploy.yml
+name: Deploy Laravel 11 to AWS Elastic Beanstalk
 
 on:
   push:
     branches:
-      - main  # or the branch you want to deploy from
+      - main
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 🧱 Checkout Repo
-        uses: actions/checkout@v3
+      # Checkout the repo
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: 🧪 Set up PHP
+      # Setup PHP
+      - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: 8.2
-          extensions: mbstring, bcmath, xml, curl, openssl, tokenizer, pdo, pdo_mysql
-          tools: composer
+          php-version: '8.2'
+          extensions: mbstring, ctype, fileinfo, openssl, tokenizer, xml, gd, pdo_mysql
 
-      - name: 📦 Install Composer Dependencies
-        run: composer install --no-interaction --prefer-dist --optimize-autoloader
-
-      - name: ⚙️ Set up Laravel ENV
+      # Install Composer dependencies
+      - name: Install Composer dependencies
         run: |
-          cp .env.example .env
-          php artisan key:generate
+          composer install --no-dev --optimize-autoloader
 
-      - name: 🛠️ Set File Permissions
-        run: chmod -R 755 .
+      - name: Laravel Setup
+        run: |
+          php artisan config:clear
+          php artisan route:clear
+          php artisan view:clear
+          php artisan config:cache
+          php artisan route:cache
+          php artisan view:cache
 
-      - name: 🚀 Deploy via SSH
-        uses: appleboy/ssh-action@master
+      - name: Set permissions
+        run: |
+          chmod -R 775 storage bootstrap/cache
+
+      - name: Zip the app
+        run: |
+          zip -r app.zip . -x '*.git*' '*.github*' 'tests/*' 'node_modules/*' 'storage/logs/*' 'vendor/bin/*'
+
+      - name: Deploy to AWS Elastic Beanstalk
+        uses: einaregilsson/beanstalk-deploy@v21
         with:
-          host: ${{ secrets.SERVER_IP }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          port: 22
-          script: |
-            cd /var/www/your-project-folder
-            git pull origin main
-            composer install --no-interaction --prefer-dist --optimize-autoloader
-            php artisan migrate --force
-            php artisan config:cache
-            php artisan route:cache
-            php artisan view:cache
+          aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          application_name: ${{ secrets.AWS_ELASTICBEANSTALK_APPLICATION_NAME }}
+          environment_name: ${{ secrets.AWS_ELASTICBEANSTALK_ENVIRONMENT_NAME }}
+          region: ${{ secrets.AWS_REGION }}
+          version_label: "v-${{ github.run_number }}"
+          deployment_package: app.zip
+          wait_for_deployment: true
+          use_existing_version_if_available: true
